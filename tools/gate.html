@@ -9,6 +9,7 @@
 :root { --bg: #f3f5f1; --surface: #fff; --ink: #1d2a24; --muted: #5f6d66; --line: #d9e0da; --accent: #2f6b4f; --error: #a3321e; }
 @media (prefers-color-scheme: dark) { :root { --bg: #121815; --surface: #1a221e; --ink: #e5ece7; --muted: #9aa8a0; --line: #2c3833; --accent: #7cc39c; --error: #f08a74; color-scheme: dark; } }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--ink);
   font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 form { width: 100%; max-width: 340px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 24px; display: grid; gap: 14px; }
@@ -43,8 +44,17 @@ async function deriveKey(password) {
 async function unlock(raw) {
   const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
   const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes(IV) }, key, bytes(DATA));
-  const html = new TextDecoder().decode(plain);
-  document.open(); document.write(html); document.close();
+  const doc = new DOMParser().parseFromString(new TextDecoder().decode(plain), "text/html");
+  document.title = doc.title;
+  document.querySelectorAll("style").forEach(el => el.remove());
+  doc.querySelectorAll("style, link").forEach(el => document.head.appendChild(el));
+  doc.querySelectorAll("title, meta").forEach(el => el.remove());
+  document.body.replaceChildren(...doc.body.childNodes);
+  document.body.querySelectorAll("script").forEach(old => {
+    const fresh = document.createElement("script");
+    fresh.textContent = old.textContent;
+    old.replaceWith(fresh);
+  });
 }
 
 function remembered() {
@@ -55,10 +65,11 @@ function remember(raw) {
   try { localStorage.setItem(STORE, JSON.stringify({ salt: SALT, key: btoa(String.fromCharCode(...raw)) })); } catch {}
 }
 
-window.addEventListener("load", async () => {
-  const raw = remembered();
-  if (raw) { try { await unlock(raw); } catch {} }
-});
+const stored = remembered();
+if (stored) {
+  document.getElementById("gate").hidden = true;
+  unlock(stored).catch(() => { document.getElementById("gate").hidden = false; });
+}
 
 document.getElementById("gate").addEventListener("submit", async e => {
   e.preventDefault();

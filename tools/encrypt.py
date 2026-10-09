@@ -3,7 +3,7 @@
 Aufruf: python3 encrypt.py <eingabe.html> <ausgabe.html> <passwort>
 Die Eingabe ist der Seiteninhalt ohne <html>/<head>-Gerüst (wie für das Claude-Artifact).
 """
-import base64, os, sys
+import base64, hashlib, os, sys
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -15,9 +15,11 @@ src, out, password = sys.argv[1], sys.argv[2], sys.argv[3]
 inner = open(src, encoding="utf-8").read()
 page = ('<!doctype html><html lang="de"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
-        '</head><body>' + inner + '</body></html>')
+        '<style>[hidden]{display:none!important}</style></head><body>' + inner + '</body></html>')
 
-salt, iv = os.urandom(16), os.urandom(12)
+# Fester Salt pro Passwort: so bleibt "Auf diesem Gerät merken" gültig, wenn die Seite neu verschlüsselt wird.
+salt = hashlib.sha256(b"wochenplan-salt:" + password.encode()).digest()[:16]
+iv = os.urandom(12)
 key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=ITERATIONS).derive(password.encode())
 cipher = AESGCM(key).encrypt(iv, page.encode("utf-8"), None)
 
