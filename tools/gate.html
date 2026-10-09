@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Wochenplan</title>
+<style>
+:root { --bg: #f3f5f1; --surface: #fff; --ink: #1d2a24; --muted: #5f6d66; --line: #d9e0da; --accent: #2f6b4f; --error: #a3321e; }
+@media (prefers-color-scheme: dark) { :root { --bg: #121815; --surface: #1a221e; --ink: #e5ece7; --muted: #9aa8a0; --line: #2c3833; --accent: #7cc39c; --error: #f08a74; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+form { width: 100%; max-width: 340px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 24px; display: grid; gap: 14px; }
+h1 { margin: 0; font-size: 1.4rem; }
+p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+input[type=password] { width: 100%; padding: 12px; font-size: 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); }
+label { display: flex; gap: 8px; align-items: center; font-size: 0.9rem; color: var(--muted); }
+button { padding: 12px; font-size: 1rem; font-weight: 700; border: 0; border-radius: 10px; background: var(--accent); color: var(--bg); cursor: pointer; }
+button:disabled { opacity: 0.6; }
+.error { color: var(--error); }
+</style>
+</head>
+<body>
+<form id="gate">
+  <h1>Wochenplan</h1>
+  <p>Bitte Passwort eingeben.</p>
+  <input id="pw" type="password" autocomplete="current-password" aria-label="Passwort" required autofocus>
+  <label><input id="remember" type="checkbox" checked> Auf diesem Gerät merken</label>
+  <button id="go" type="submit">Öffnen</button>
+  <p id="msg" class="error" hidden>Das Passwort stimmt nicht.</p>
+</form>
+<script>
+const SALT = "__SALT__", IV = "__IV__", ITER = __ITER__, DATA = "__DATA__";
+const STORE = "wochenplan-key";
+const bytes = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+async function deriveKey(password) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", salt: bytes(SALT), iterations: ITER, hash: "SHA-256" }, base, 256));
+}
+
+async function unlock(raw) {
+  const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes(IV) }, key, bytes(DATA));
+  const html = new TextDecoder().decode(plain);
+  document.open(); document.write(html); document.close();
+}
+
+function remembered() {
+  try { const v = localStorage.getItem(STORE); return v && JSON.parse(v).salt === SALT ? bytes(JSON.parse(v).key) : null; } catch { return null; }
+}
+
+function remember(raw) {
+  try { localStorage.setItem(STORE, JSON.stringify({ salt: SALT, key: btoa(String.fromCharCode(...raw)) })); } catch {}
+}
+
+window.addEventListener("load", async () => {
+  const raw = remembered();
+  if (raw) { try { await unlock(raw); } catch {} }
+});
+
+document.getElementById("gate").addEventListener("submit", async e => {
+  e.preventDefault();
+  const go = document.getElementById("go"), msg = document.getElementById("msg");
+  go.disabled = true; msg.hidden = true;
+  try {
+    const raw = await deriveKey(document.getElementById("pw").value);
+    if (document.getElementById("remember").checked) remember(raw);
+    await unlock(raw);
+  } catch {
+    msg.hidden = false; go.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
